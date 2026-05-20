@@ -1,3 +1,5 @@
+import json
+import socket
 import time
 from machine import ADC, Pin
 import network
@@ -16,9 +18,83 @@ THRESHOLD_CM = 10
 SSID = "BUFFALO-G"
 PASSWORD = "123456789ab0"
 
+# WebSocketサーバーの設定
+WS_HOST = "192.168.3.138"
+WS_PORT = 8765
+
 # Wi-Fi接続用の変数（グローバルで管理）
 wlan = None
 
+# -- WebSocketデータ送信関数 --
+def send_ws_message(host, port, payload):
+    """シンプルなWebSocketハンドシェイクを行い、JSONデータを送信する関数"""
+    try:
+        # ソケット作成と接続
+        addr = socket.getaddrinfo(host, port)[0][-1]
+        s = socket.socket()
+        s.settimeout(3.0)  # タイムアウト設定
+        s.connect(addr)
+
+        # WebSocketのハンドシェイク要求リクエスト
+        # (最低限必要なヘッダーのみ)
+        handshake = (
+            "GET / HTTP/1.1\r\n"
+            f"Host: {host}:{port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        )
+        s.send(handshake.encode())
+
+        # サーバーからのレスポンスを受信（ヘッダーの読み飛ばし）
+        # ※実際の運用では検証するのが望ましいですが、軽量化のためスキップ
+        response = s.recv(1024)
+
+        # JSONデータを文字列に変換してバイト配列化
+        msg = json.dumps(payload).encode("utf-8")
+        msg_len = len(msg)
+
+        # WebSocketフレームの作成 (Text frame, Masked from client)
+        # MicroPython(クライアント)から送信する場合、マスク処理(Masking)が必須です
+        frame = bytearray()
+        frame.append(0x81)  # FIN=1, Opcode=1 (Text)
+
+        # マスクキー (固定の4バイト、何でも良い)
+        mask_key = b"\x11\x22\x33\x44"
+
+        if msg_len <= 125:
+            frame.append(msg_len | 0x80)  # Maskフラグ(0x80)を立てる
+        elif msg_len <= 65535:
+            frame.append(126 | 0x80)
+            frame.append((msg_len >> 8) & 0xFF)
+            frame.append(msg_len & 0xFF)
+        else:
+            # 巨大なデータは扱わない前提
+            s.close()
+            return False
+
+        frame.extend(mask_key)
+
+        # データのマスク処理（XOR演算）
+        masked_msg = bytearray(msg_len)
+        for i in range(msg_len):
+            masked_msg[i] = msg[i] ^ mask_key[i % 4]
+
+        frame.extend(masked_msg)
+
+        # フレームの送信
+        s.send(frame)
+        print(f"WebSocket送信成功: {payload}")
+
+        # 接続を閉じる
+        s.close()
+        return True
+
+    except Exception as e:
+        print(f"WebSocket送信エラー: {e}")
+        return False
+    
 # -- 赤外線センサーの距離測定と物体検出のメインループ --
 def IrCenceer():
 
@@ -51,7 +127,13 @@ def IrCenceer():
                 object_detected = True  # フラグをTrueにして連続カウントを防ぐ
                 Count_Led.value(1)
 
-                
+                # --- WebSocketでJSONデータを送信 ---
+                if wlan is not None and wlan.isconnected():
+                    send_data = {"type": "counter", "value": 1}
+                    send_ws_message(WS_HOST, WS_PORT, send_data)
+                else:
+                    print("Wi-Fi未接続のため、データ送信をスキップしました。")
+
         # しきい値を上回った（物体が遠ざかった）場合
         else:
             if object_detected:

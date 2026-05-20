@@ -1,0 +1,2 @@
+Ctrl + Shift + P
+MicroPico: Upload file to Pico
