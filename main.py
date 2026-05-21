@@ -6,13 +6,13 @@ import network
 
 # センサーの接続ピン設定 (GP26に修正)
 sensor = ADC(Pin(26))
-Wifi_Led = Pin(28, Pin.OUT)
-Count_Led = Pin(1, Pin.OUT)
+Wifi_Led = Pin(5, Pin.OUT)
+Count_Led = Pin(9, Pin.OUT)
 Reset_Btn = Pin(0, Pin.IN, Pin.PULL_UP)
 
 # 物体検出のしきい値（今回は「20cm以内に入ったら」という設定にしてみます）
 # 好みに合わせて変更してください（例: 30cm 以内なら 30）
-THRESHOLD_CM = 10
+THRESHOLD_CM = 15
 
 # Wi-Fiの接続情報（ご自身の環境に合わせて書き換えてください）
 SSID = "BUFFALO-G"
@@ -94,6 +94,30 @@ def send_ws_message(host, port, payload):
     except Exception as e:
         print(f"WebSocket送信エラー: {e}")
         return False
+
+#-- 赤外線センサーから距離を取得する関数 --    
+def get_distance():
+    # 複数回サンプリングして平均を取り、ノイズを軽減する
+    total = 0
+    samples = 10
+    for _ in range(samples):
+        total += sensor.read_u16()
+        time.sleep_ms(5)
+    
+    avg_reading = total / samples
+    voltage = (avg_reading * 3.3) / 65535
+    
+    if voltage < 0.4:
+        return float('inf')
+        
+    distance_cm = 26.985 / (voltage - 0.05)
+    
+    if distance_cm > 80:
+        return 80.0
+    elif distance_cm < 10:
+        return 10.0
+        
+    return distance_cm
     
 # -- 赤外線センサーの距離測定と物体検出のメインループ --
 def IrCenceer():
@@ -104,19 +128,20 @@ def IrCenceer():
     count = 0
     object_detected = False
 
+    # 起動時のタイムスタンプを記録
+    start_time = time.ticks_ms()
+
     while True:
-        analog_value = sensor.read_u16()
-        voltage = analog_value * 3.3 / 65535
-        
-        # 3. 電圧から距離(cm)に換算する近似式
-        # ※電圧が極端に低い(0.3V以下＝何も無い)ときのゼロ除算エラーを防ぐ処理付き
-        if voltage > 0.3:
-            # 2Y0A21用の定番の換算式です
-            distance_cm = 13 / (voltage - 0.1)
-        else:
-            distance_cm = 80.0 # 反応がない場合は最大距離（約80cm）とする
+
+        # 現在のミリ秒を取得し、起動時からの差分（経過ミリ秒）を計算
+        elapsed_ms = time.ticks_diff(time.ticks_ms(), start_time)
+        elapsed_sec = elapsed_ms / 1000.0
+
+        distance_cm = get_distance()  # より安定した距離値を取得するための関数呼び出し
 
         #print(f"距離: {distance_cm:.1f} cm (センサー値: {analog_value})")
+
+        print(f"{elapsed_sec:7.2f}s - 距離: {distance_cm:.1f} cm")
         
         # しきい値より「小さくなった（＝近づいた）」場合
         # ※距離なので、THRESHOLD_CMより数値が小さくなったら検出になります
@@ -148,7 +173,14 @@ def IrCenceer():
         
         # トグルスイッチのONを検知
         if Reset_Btn.value() == 0:  # ボタンが押されたとき（アクティブロー）
-            print("リセットボタンが押されました。カウントをリセットします。")
+
+            # --- WebSocketでJSONデータを送信 ---
+            if wlan is not None and wlan.isconnected():
+                send_data = {"type": "reset"}
+                send_ws_message(WS_HOST, WS_PORT, send_data)
+                print("リセットボタンが押されました。カウントをリセットします。")
+            else:
+                print("Wi-Fi未接続のため、データ送信をスキップしました。")
             count = 0
             Count_Led.value(0)
             time.sleep(0.5)  # ボタンのチャタリング防止のため少し待つ
