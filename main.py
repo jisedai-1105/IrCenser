@@ -8,6 +8,7 @@ import network
 sensor = ADC(Pin(26))
 Wifi_Led = Pin(5, Pin.OUT)
 Count_Led = Pin(9, Pin.OUT)
+Error_Led = Pin(13, Pin.OUT)
 Reset_Btn = Pin(0, Pin.IN, Pin.PULL_UP)
 
 # 物体検出のしきい値（今回は「20cm以内に入ったら」という設定にしてみます）
@@ -19,8 +20,14 @@ SSID = "BUFFALO-G"
 PASSWORD = "123456789ab0"
 
 # WebSocketサーバーの設定
-WS_HOST = "192.168.3.138"
+WS_HOST = "192.168.3.136"
 WS_PORT = 8765
+
+# カウンターの識別番号（複数台設置する場合などに区別するため）
+LINE_NO = 2
+
+# 一回当たりのカウント数
+VALUE = 1
 
 # Wi-Fi接続用の変数（グローバルで管理）
 wlan = None
@@ -141,7 +148,7 @@ def IrCenceer():
 
         #print(f"距離: {distance_cm:.1f} cm (センサー値: {analog_value})")
 
-        print(f"{elapsed_sec:7.2f}s - 距離: {distance_cm:.1f} cm")
+        #print(f"{elapsed_sec:7.2f}s - 距離: {distance_cm:.1f} cm")
         
         # しきい値より「小さくなった（＝近づいた）」場合
         # ※距離なので、THRESHOLD_CMより数値が小さくなったら検出になります
@@ -154,7 +161,12 @@ def IrCenceer():
 
                 # --- WebSocketでJSONデータを送信 ---
                 if wlan is not None and wlan.isconnected():
-                    send_data = {"type": "counter", "value": 1}
+                    print("-- 送信情報 -------------------------------")
+                    print(f"Line_No: {LINE_NO}, Value: {VALUE}")
+                    print(f"WS_HOST: {WS_HOST}, WS_PORT: {WS_PORT}")
+
+                    send_data = {"type": "counter","no" :LINE_NO, "value": VALUE}
+
                     send_ws_message(WS_HOST, WS_PORT, send_data)
                 else:
                     print("Wi-Fi未接続のため、データ送信をスキップしました。")
@@ -166,24 +178,31 @@ def IrCenceer():
                 Count_Led.value(0)
                 print("物体が離れました。")
 
-        # Wi-Fi関連
-        if wlan is not None and not wlan.isconnected():
-            print("Wi-Fi接続が切れました。再接続を試みます...")
-            connect_wifi()
         
         # トグルスイッチのONを検知
         if Reset_Btn.value() == 0:  # ボタンが押されたとき（アクティブロー）
 
             # --- WebSocketでJSONデータを送信 ---
             if wlan is not None and wlan.isconnected():
-                send_data = {"type": "reset"}
+                send_data = {"type": "reset", "no": LINE_NO}
+                print("リセットボタンが押されました。")
                 send_ws_message(WS_HOST, WS_PORT, send_data)
-                print("リセットボタンが押されました。カウントをリセットします。")
             else:
                 print("Wi-Fi未接続のため、データ送信をスキップしました。")
             count = 0
             Count_Led.value(0)
             time.sleep(0.5)  # ボタンのチャタリング防止のため少し待つ
+
+        # Wi-Fi関連
+        if wlan is not None and not wlan.isconnected():
+            Error_Led.value(1)
+            print("Wi-Fi接続が切れました。再接続を試みます...")
+            connect_wifi()
+
+        if wlan is not None and not wlan.isconnected():
+            pass
+        else:
+            Error_Led.value(0)
 
         time.sleep(0.05)
 
@@ -199,8 +218,8 @@ def connect_wifi():
         print(f"{SSID} に接続中...")
         wlan.connect(SSID, PASSWORD)
         
-        # タイムアウト時間を秒単位で設定（5分 ＝ 300秒）
-        TIMEOUT_SECONDS = 60 * 5
+        # タイムアウト時間を秒単位で設定
+        TIMEOUT_SECONDS = 60 * 3
         
         # 【変更点】ループ開始前の「現在の時間（ミリ秒）」を記録
         start_time_ms = time.ticks_ms()
@@ -246,11 +265,16 @@ def connect_wifi():
         print("--- 接続失敗（タイムアウト） ---")
         Wifi_Led.value(0) # 消灯
         return False
-    
-# Wi-Fiに接続
-if not connect_wifi():
-    print("Wi-Fi接続に失敗しました。")
-    exit()
 
-# 赤外線センサーの実行
-IrCenceer()
+try :
+    # Wi-Fiに接続
+    if not connect_wifi():
+        print("Wi-Fi接続に失敗しました。")
+        exit()
+    # 赤外線センサーの実行
+    IrCenceer()
+except KeyboardInterrupt:    
+    print("プログラムを終了します。")
+finally:
+    Wifi_Led.value(0)
+    Count_Led.value(0)
