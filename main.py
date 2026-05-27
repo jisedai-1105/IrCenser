@@ -20,11 +20,14 @@ SSID = "BUFFALO-G"
 PASSWORD = "123456789ab0"
 
 # WebSocketサーバーの設定
-WS_HOST = "192.168.3.136"
+WS_HOST = "192.168.3.139"
 WS_PORT = 8765
 
 # カウンターの識別番号（複数台設置する場合などに区別するため）
-LINE_NO = 2
+LINE_NO = 1
+
+# データ送信の間隔（秒）
+SEND_INTERVAL_SEC = 0.3
 
 # 一回当たりのカウント数
 VALUE = 1
@@ -137,48 +140,34 @@ def IrCenceer():
 
     # 起動時のタイムスタンプを記録
     start_time = time.ticks_ms()
+    bef_sec = 0
+    exe_sec = 0
 
     while True:
 
         # 現在のミリ秒を取得し、起動時からの差分（経過ミリ秒）を計算
         elapsed_ms = time.ticks_diff(time.ticks_ms(), start_time)
         elapsed_sec = elapsed_ms / 1000.0
+        exe_sec = elapsed_sec - bef_sec 
 
         distance_cm = get_distance()  # より安定した距離値を取得するための関数呼び出し
 
-        #print(f"距離: {distance_cm:.1f} cm (センサー値: {analog_value})")
+        Count_Led.value(0)
 
-        #print(f"{elapsed_sec:7.2f}s - 距離: {distance_cm:.1f} cm")
-        
-        # しきい値より「小さくなった（＝近づいた）」場合
-        # ※距離なので、THRESHOLD_CMより数値が小さくなったら検出になります
-        if distance_cm < THRESHOLD_CM:
-            if not object_detected:
-                count += 1
-                print(f"【検出】物体が {THRESHOLD_CM}cm 以内を通過！ カウント: {count}")
-                object_detected = True  # フラグをTrueにして連続カウントを防ぐ
-                Count_Led.value(1)
+        # --- WebSocketでJSONデータを送信 ---
+        if wlan is not None and wlan.isconnected():
+            if bef_sec == 0 or exe_sec >= SEND_INTERVAL_SEC:
+                print(f"WS_HOST: {WS_HOST}, WS_PORT: {WS_PORT}")
+                print(f"LineNo: {LINE_NO} / 距離: {distance_cm:.2f} cm")
+                send_data = {"type": "dist","no": LINE_NO,"dist": distance_cm, "sec": SEND_INTERVAL_SEC}
+                IsSend = send_ws_message(WS_HOST, WS_PORT, send_data)
+                bef_sec = elapsed_sec
+                if IsSend == True:
+                    Count_Led.value(1)
 
-                # --- WebSocketでJSONデータを送信 ---
-                if wlan is not None and wlan.isconnected():
-                    print("-- 送信情報 -------------------------------")
-                    print(f"Line_No: {LINE_NO}, Value: {VALUE}")
-                    print(f"WS_HOST: {WS_HOST}, WS_PORT: {WS_PORT}")
-
-                    send_data = {"type": "counter","no" :LINE_NO, "value": VALUE}
-
-                    send_ws_message(WS_HOST, WS_PORT, send_data)
-                else:
-                    print("Wi-Fi未接続のため、データ送信をスキップしました。")
-
-        # しきい値を上回った（物体が遠ざかった）場合
         else:
-            if object_detected:
-                object_detected = False
-                Count_Led.value(0)
-                print("物体が離れました。")
+            print("Wi-Fi未接続のため、データ送信をスキップしました。")
 
-        
         # トグルスイッチのONを検知
         if Reset_Btn.value() == 0:  # ボタンが押されたとき（アクティブロー）
 
@@ -186,10 +175,9 @@ def IrCenceer():
             if wlan is not None and wlan.isconnected():
                 send_data = {"type": "reset", "no": LINE_NO}
                 print("リセットボタンが押されました。")
-                send_ws_message(WS_HOST, WS_PORT, send_data)
+                IsSend = send_ws_message(WS_HOST, WS_PORT, send_data)
             else:
                 print("Wi-Fi未接続のため、データ送信をスキップしました。")
-            count = 0
             Count_Led.value(0)
             time.sleep(0.5)  # ボタンのチャタリング防止のため少し待つ
 
