@@ -20,7 +20,7 @@ SSID = "BUFFALO-G"
 PASSWORD = "123456789ab0"
 
 # WebSocketサーバーの設定
-WS_HOST = "192.168.3.139"
+WS_HOST = "192.168.3.136"
 WS_PORT = 8765
 
 # カウンターの識別番号（複数台設置する場合などに区別するため）
