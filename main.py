@@ -35,15 +35,47 @@ VALUE = 1
 # Wi-Fi接続用の変数（グローバルで管理）
 wlan = None
 
+# ソケット
+MySocket = socket.socket()
+
+# -- ソケットを開く関数 --
+def socket_open():
+
+    global MySocket
+    count = 0
+
+    while True:
+        try:
+
+            addr = socket.getaddrinfo(WS_HOST, WS_PORT)[0][-1]
+            MySocket.settimeout(3.0)  # タイムアウト設定
+            MySocket.connect(addr)
+            Error_Led.value(0)
+            break  
+
+        except Exception as e:
+            Error_Led.toggle() 
+            count += 1
+            if count >= 10:
+                break
+            print(f"WebSocket 接続エラー: {e}")
+            time.sleep(1) 
+
+# -- ソケットを閉じる関数 --
+def socket_close():
+    global MySocket
+    try:
+        MySocket.close()
+    except Exception as e:
+        pass
+
 # -- WebSocketデータ送信関数 --
 def send_ws_message(host, port, payload):
+    
+    global MySocket
+
     """シンプルなWebSocketハンドシェイクを行い、JSONデータを送信する関数"""
     try:
-        # ソケット作成と接続
-        addr = socket.getaddrinfo(host, port)[0][-1]
-        s = socket.socket()
-        s.settimeout(3.0)  # タイムアウト設定
-        s.connect(addr)
 
         # WebSocketのハンドシェイク要求リクエスト
         # (最低限必要なヘッダーのみ)
@@ -55,11 +87,11 @@ def send_ws_message(host, port, payload):
             "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
             "Sec-WebSocket-Version: 13\r\n\r\n"
         )
-        s.send(handshake.encode())
+        MySocket.send(handshake.encode())
 
         # サーバーからのレスポンスを受信（ヘッダーの読み飛ばし）
         # ※実際の運用では検証するのが望ましいですが、軽量化のためスキップ
-        response = s.recv(1024)
+        response = MySocket.recv(1024)
 
         # JSONデータを文字列に変換してバイト配列化
         msg = json.dumps(payload).encode("utf-8")
@@ -81,7 +113,6 @@ def send_ws_message(host, port, payload):
             frame.append(msg_len & 0xFF)
         else:
             # 巨大なデータは扱わない前提
-            s.close()
             return False
 
         frame.extend(mask_key)
@@ -94,11 +125,9 @@ def send_ws_message(host, port, payload):
         frame.extend(masked_msg)
 
         # フレームの送信
-        s.send(frame)
+        MySocket.send(frame)
         print(f"WebSocket送信成功: {payload}")
 
-        # 接続を閉じる
-        s.close()
         return True
 
     except Exception as e:
@@ -137,6 +166,9 @@ def IrCenceer():
     # カウント変数と状態管理フラグ
     count = 0
     object_detected = False
+
+    # ソケットを開く
+    socket_open()  
 
     # 起動時のタイムスタンプを記録
     start_time = time.ticks_ms()
@@ -193,6 +225,9 @@ def IrCenceer():
             Error_Led.value(0)
 
         time.sleep(0.05)
+
+    # ソケットを閉じる
+    socket_close()  
 
 # -- Wi-Fi接続関数 --
 def connect_wifi():
@@ -266,3 +301,5 @@ except KeyboardInterrupt:
 finally:
     Wifi_Led.value(0)
     Count_Led.value(0)
+    Error_Led.value(0)
+    socket_close()
