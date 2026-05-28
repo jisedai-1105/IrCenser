@@ -24,10 +24,10 @@ WS_HOST = "192.168.3.136"
 WS_PORT = 8765
 
 # カウンターの識別番号（複数台設置する場合などに区別するため）
-LINE_NO = 1
+LINE_NO = 2
 
 # データ送信の間隔（秒）
-SEND_INTERVAL_SEC = 0.5
+SEND_INTERVAL_SEC = 0.3
 
 # 一回当たりのカウント数
 VALUE = 1
@@ -47,6 +47,7 @@ def socket_open():
     while True:
         try:
 
+            MySocket = socket.socket()
             addr = socket.getaddrinfo(WS_HOST, WS_PORT)[0][-1]
             MySocket.settimeout(3.0)  # タイムアウト設定
             MySocket.connect(addr)
@@ -71,7 +72,7 @@ def socket_open():
             break  
 
         except Exception as e:
-            Error_Led.toggle() 
+            Led_Websocket_Error()
             count += 1
             if count >= 10:
                 break
@@ -93,6 +94,8 @@ def send_ws_message(host, port, payload):
 
     """シンプルなWebSocketハンドシェイクを行い、JSONデータを送信する関数"""
     try:
+
+        socket_open()  
 
         # JSONデータを文字列に変換してバイト配列化
         msg = json.dumps(payload).encode("utf-8")
@@ -129,14 +132,24 @@ def send_ws_message(host, port, payload):
         MySocket.send(frame)
         print(f"WebSocket送信成功: {payload}")
 
+        socket_close() 
+
         return True
 
     except Exception as e:
         print(f"WebSocket送信エラー: {e}")
-        Error_Led.value(1)
-        time.sleep(0.3)
-        Error_Led.value(0)
+        Led_Websocket_Error()
         return False
+
+# -- WebSocket送信エラー時のLED点滅関数 --
+def Led_Websocket_Error():
+    Error_Led.value(1)
+    time.sleep(0.2)
+    Error_Led.value(0)
+    time.sleep(0.2)
+    Error_Led.value(1)
+    time.sleep(0.2)
+    Error_Led.value(0)
 
 #-- 赤外線センサーから距離を取得する関数 --    
 def get_distance():
@@ -172,7 +185,7 @@ def IrCenceer():
     object_detected = False
 
     # ソケットを開く
-    socket_open()  
+    #socket_open()  
 
     # 起動時のタイムスタンプを記録
     start_time = time.ticks_ms()
@@ -193,8 +206,9 @@ def IrCenceer():
         # --- WebSocketでJSONデータを送信 ---
         if wlan is not None and wlan.isconnected():
             if bef_sec == 0 or exe_sec >= SEND_INTERVAL_SEC:
-                print(f"WS_HOST: {WS_HOST}, WS_PORT: {WS_PORT}")
-                print(f"LineNo: {LINE_NO} / 距離: {distance_cm:.2f} cm")
+
+                #print(f"WS_HOST: {WS_HOST} / WS_PORT: {WS_PORT} / LineNo: {LINE_NO} / 距離: {distance_cm:.2f} cm")
+
                 send_data = {"type": "dist","no": LINE_NO,"dist": distance_cm, "sec": SEND_INTERVAL_SEC}
                 IsSend = send_ws_message(WS_HOST, WS_PORT, send_data)
                 bef_sec = elapsed_sec
@@ -207,15 +221,12 @@ def IrCenceer():
         # トグルスイッチのONを検知
         if Reset_Btn.value() == 0:  # ボタンが押されたとき（アクティブロー）
 
-            # --- WebSocketでJSONデータを送信 ---
-            if wlan is not None and wlan.isconnected():
-                send_data = {"type": "reset", "no": LINE_NO}
-                print("リセットボタンが押されました。")
-                IsSend = send_ws_message(WS_HOST, WS_PORT, send_data)
-            else:
-                print("Wi-Fi未接続のため、データ送信をスキップしました。")
-            Count_Led.value(0)
+            print("リセットボタンが押されました。")
             time.sleep(0.5)  # ボタンのチャタリング防止のため少し待つ
+            #if wlan is not None and not wlan.isconnected():
+            #    connect_wifi()
+            connect_wifi()
+
 
         # Wi-Fi関連
         if wlan is not None and not wlan.isconnected():
