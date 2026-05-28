@@ -27,7 +27,7 @@ WS_PORT = 8765
 LINE_NO = 1
 
 # データ送信の間隔（秒）
-SEND_INTERVAL_SEC = 0.3
+SEND_INTERVAL_SEC = 0.5
 
 # 一回当たりのカウント数
 VALUE = 1
@@ -50,6 +50,23 @@ def socket_open():
             addr = socket.getaddrinfo(WS_HOST, WS_PORT)[0][-1]
             MySocket.settimeout(3.0)  # タイムアウト設定
             MySocket.connect(addr)
+
+            # WebSocketのハンドシェイク要求リクエスト
+            # (最低限必要なヘッダーのみ)
+            handshake = (
+                "GET / HTTP/1.1\r\n"
+                f"Host: {WS_HOST}:{WS_PORT}\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                "Sec-WebSocket-Version: 13\r\n\r\n"
+            )
+            MySocket.send(handshake.encode())
+
+            # サーバーからのレスポンスを受信（ヘッダーの読み飛ばし）
+            # ※実際の運用では検証するのが望ましいですが、軽量化のためスキップ
+            response = MySocket.recv(1024)
+
             Error_Led.value(0)
             break  
 
@@ -76,22 +93,6 @@ def send_ws_message(host, port, payload):
 
     """シンプルなWebSocketハンドシェイクを行い、JSONデータを送信する関数"""
     try:
-
-        # WebSocketのハンドシェイク要求リクエスト
-        # (最低限必要なヘッダーのみ)
-        handshake = (
-            "GET / HTTP/1.1\r\n"
-            f"Host: {host}:{port}\r\n"
-            "Upgrade: websocket\r\n"
-            "Connection: Upgrade\r\n"
-            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-            "Sec-WebSocket-Version: 13\r\n\r\n"
-        )
-        MySocket.send(handshake.encode())
-
-        # サーバーからのレスポンスを受信（ヘッダーの読み飛ばし）
-        # ※実際の運用では検証するのが望ましいですが、軽量化のためスキップ
-        response = MySocket.recv(1024)
 
         # JSONデータを文字列に変換してバイト配列化
         msg = json.dumps(payload).encode("utf-8")
@@ -132,6 +133,9 @@ def send_ws_message(host, port, payload):
 
     except Exception as e:
         print(f"WebSocket送信エラー: {e}")
+        Error_Led.value(1)
+        time.sleep(0.3)
+        Error_Led.value(0)
         return False
 
 #-- 赤外線センサーから距離を取得する関数 --    
