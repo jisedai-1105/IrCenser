@@ -24,7 +24,7 @@ WS_HOST = "192.168.3.136"
 WS_PORT = 8765
 
 # カウンターの識別番号（複数台設置する場合などに区別するため）
-LINE_NO = 2
+LINE_NO = 1
 
 # データ送信の間隔（秒）
 SEND_INTERVAL_SEC = 0.3
@@ -174,7 +174,17 @@ def get_distance():
         return 10.0
         
     return distance_cm
-    
+
+# -- WebSocket送信エラー時のLED点滅関数 --
+def Led_Rest_ON():
+    Error_Led.value(1)
+    Wifi_Led.value(1)
+    Count_Led.value(1)
+    time.sleep(2)
+    Error_Led.value(0)
+    Wifi_Led.value(0)
+    Count_Led.value(0)
+
 # -- 赤外線センサーの距離測定と物体検出のメインループ --
 def IrCenceer():
 
@@ -222,7 +232,9 @@ def IrCenceer():
         if Reset_Btn.value() == 0:  # ボタンが押されたとき（アクティブロー）
 
             print("リセットボタンが押されました。")
-            time.sleep(0.5)  # ボタンのチャタリング防止のため少し待つ
+            Led_Rest_ON()
+
+            #time.sleep(0.5)  # ボタンのチャタリング防止のため少し待つ
             #if wlan is not None and not wlan.isconnected():
             #    connect_wifi()
             connect_wifi()
