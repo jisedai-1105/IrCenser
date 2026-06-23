@@ -10,6 +10,7 @@ Wifi_Led = Pin(5, Pin.OUT)
 Count_Led = Pin(9, Pin.OUT)
 Error_Led = Pin(13, Pin.OUT)
 Reset_Btn = Pin(0, Pin.IN, Pin.PULL_UP)
+DistReset_Btn = Pin(19, Pin.IN, Pin.PULL_UP)
 
 # 物体検出のしきい値（今回は「20cm以内に入ったら」という設定にしてみます）
 # 好みに合わせて変更してください（例: 30cm 以内なら 30）
@@ -52,6 +53,16 @@ wlan = None
 
 # ソケット
 MySocket = socket.socket()
+
+
+# 距離リセットの設定パラメータ（ミリ秒）
+DOUBLE_CLICK_TIME = 300  # ダブルクリックを待つ時間
+DEBOUNCE_TIME = 50       # チャタリング防止
+
+# 距離リセットの状態管理用
+last_press_time = 0
+click_count = 0
+waiting_for_double = False
 
 # -- ソケットを開く関数 --
 def socket_open():
@@ -219,6 +230,8 @@ def IrCenceer():
 
     while True:
 
+        current_time = time.ticks_ms()
+
         # 現在のミリ秒を取得し、起動時からの差分（経過ミリ秒）を計算
         elapsed_ms = time.ticks_diff(time.ticks_ms(), start_time)
         elapsed_sec = elapsed_ms / 1000.0
@@ -254,6 +267,44 @@ def IrCenceer():
             #    connect_wifi()
             connect_wifi()
 
+        # 距離のリセットボタンのシングルクリック
+        if DistReset_Btn.value() == 0 :
+            if time.ticks_diff(current_time, last_press_time) > DEBOUNCE_TIME:
+                click_count += 1
+                last_press_time = current_time
+                waiting_for_double = True
+
+            # 2回押されたらその時点でダブルクリック確定
+            if click_count == 2:
+                print("★ダブルクリック検知！：距離リセットなどの処理")
+
+                send_data = {"type": "RstDistRst" , "no": LINE_NO , "sec": SEND_INTERVAL_SEC}
+                IsSend = send_ws_message(WS_HOST, WS_PORT, send_data)
+                bef_sec = elapsed_sec
+                if IsSend == True:
+                    Count_Led.value(1)
+
+                click_count = 0
+                waiting_for_double = False
+                
+        # ボタンが離されるまで待機（長押し対策）
+        while DistReset_Btn.value() == 0:
+            time.sleep_ms(10)
+
+        # 2. ボタンが押された後、2回目が来ずに制限時間を過ぎた場合の処理
+        if waiting_for_double and click_count == 1:
+            if time.ticks_diff(current_time, last_press_time) > DOUBLE_CLICK_TIME:
+                print("〇シングルクリック検知：通常の処理")
+                # 【ここにシングルクリック時の処理を書く】
+
+                send_data = {"type": "RstDist" , "no": LINE_NO , "dist": distance_cm , "sec": SEND_INTERVAL_SEC}
+                IsSend = send_ws_message(WS_HOST, WS_PORT, send_data)
+                bef_sec = elapsed_sec
+                if IsSend == True:
+                    Count_Led.value(1)
+
+                click_count = 0
+                waiting_for_double = False
 
         # Wi-Fi関連
         if wlan is not None and not wlan.isconnected():
