@@ -10,7 +10,7 @@ Wifi_Led = Pin(5, Pin.OUT)
 Count_Led = Pin(9, Pin.OUT)
 Error_Led = Pin(13, Pin.OUT)
 Reset_Btn = Pin(0, Pin.IN, Pin.PULL_UP)
-DistReset_Btn = Pin(19, Pin.IN, Pin.PULL_UP)
+DistReset_Btn = Pin(22, Pin.IN, Pin.PULL_UP)
 
 # 物体検出のしきい値（今回は「20cm以内に入ったら」という設定にしてみます）
 # 好みに合わせて変更してください（例: 30cm 以内なら 30）
@@ -225,7 +225,7 @@ def Led_Rest_ON():
 # -- 赤外線センサーの距離測定と物体検出のメインループ --
 def IrCenceer():
 
-    global wlan
+    global wlan, click_count, last_press_time, waiting_for_double
 
     # カウント変数と状態管理フラグ
     count = 0
@@ -287,7 +287,7 @@ def IrCenceer():
 
             # 2回押されたらその時点でダブルクリック確定
             if click_count == 2:
-                print("★ダブルクリック検知！：距離リセットなどの処理")
+                print("★ダブルクリック検知")
 
                 send_data = {"type": "RstDistRst" , "no": LINE_NO , "sec": SEND_INTERVAL_SEC}
                 IsSend = send_ws_message(WS_HOST, WS_PORT, send_data)
@@ -305,7 +305,7 @@ def IrCenceer():
         # 2. ボタンが押された後、2回目が来ずに制限時間を過ぎた場合の処理
         if waiting_for_double and click_count == 1:
             if time.ticks_diff(current_time, last_press_time) > DOUBLE_CLICK_TIME:
-                print("〇シングルクリック検知：通常の処理")
+                print("〇シングルクリック検知")
                 # 【ここにシングルクリック時の処理を書く】
 
                 send_data = {"type": "RstDist" , "no": LINE_NO , "dist": distance_cm , "sec": SEND_INTERVAL_SEC}
