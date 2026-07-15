@@ -294,6 +294,13 @@ def IrCenceer():
                 bef_sec = elapsed_sec
                 if IsSend == True:
                     Count_Led.value(1)
+                    Error_Led.value(1)
+                    time.sleep(0.3)
+                    Error_Led.value(0)
+                    time.sleep(0.3)
+                    Error_Led.value(1)
+                    time.sleep(0.3)
+                    Error_Led.value(0)
 
                 click_count = 0
                 waiting_for_double = False
@@ -313,6 +320,9 @@ def IrCenceer():
                 bef_sec = elapsed_sec
                 if IsSend == True:
                     Count_Led.value(1)
+                    Error_Led.value(1)
+                    time.sleep(0.3)
+                    Error_Led.value(0)
 
                 click_count = 0
                 waiting_for_double = False
